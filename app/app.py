@@ -1,90 +1,117 @@
-# app.py
 import streamlit as st
 import pandas as pd
-from dq_checks import basic_summary, column_summary, data_quality_score, simple_type_checks, apply_basic_rules
+import numpy as np
 
-st.set_page_config(page_title="Healthcare Data Quality Checker", layout="wide")
+st.title("Healthcare Data Quality Checker")
 
-st.title("Healthcare Data Quality Checker (Beginner friendly)")
+# -----------------------------
+# Step 1: Upload CSV
+# -----------------------------
+uploaded_file = st.file_uploader("Upload CSV file", type="csv")
 
-st.markdown("""
-Upload a CSV (patient register, visits, or other healthcare dataset). The app calculates basic data-quality metrics,
-a column summary, a simple quality score, and lists common issues with easy export options.
-""")
-
-uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
-example_data = st.checkbox("Load example demo dataset")
-
-if example_data and uploaded_file is None:
-    # create a tiny sample demo
-    df = pd.DataFrame({
-        "patient_id": [1,2,3,3],
-        "age": [25, "30", None, 45],
-        "gender": ["F","M","F","F"],
-        "admission_date": ["2023-01-01","2023-02-02","2023-02-03","2023-01-15"],
-        "discharge_date": ["2023-01-10","2023-02-01","2023-02-05","2023-01-12"],
-        "lab_value": [4.5, "NaN", 7.8, 5.2]
-    })
+# Optionally, load demo dataset
+if st.checkbox("Load example demo dataset"):
+    data = {
+        'patient_id': [1,2,3,3,4,5],
+        'age': [25,30,np.nan,45,150,40],
+        'gender': ['F','M','F','F','M',np.nan],
+        'admission_date': ['2023-01-01','2023-02-02','2023-02-03','2023-01-15','2023-03-01','2023-03-05'],
+        'discharge_date': ['2023-01-10','2023-02-01','2023-02-05','2023-01-12','2023-03-02',np.nan],
+        'lab_value': [4.5,np.nan,7.8,5.2,6.1,8.0]
+    }
+    df = pd.DataFrame(data)
 elif uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
 else:
-    df = None
+    st.info("Please upload a CSV file or load the demo dataset to proceed.")
+    st.stop()
 
-if df is not None:
-    st.subheader("Preview data")
-    st.dataframe(df.head(100))
+# -----------------------------
+# Step 2: Preview Data
+# -----------------------------
+st.subheader("Preview Data")
+st.dataframe(df.head())
 
-    st.subheader("Basic summary")
-    summary = basic_summary(df)
-    st.json(summary)
+# -----------------------------
+# Step 3: Column Summary
+# -----------------------------
+st.subheader("Column Summary")
+col_summary = pd.DataFrame({
+    'Column': df.columns,
+    'Non-missing Count': df.notnull().sum().values,
+    'Missing Count': df.isnull().sum().values,
+    'Missing %': (df.isnull().sum().values / len(df) * 100)
+})
+st.dataframe(col_summary)
 
-    st.subheader("Column summary")
-    cs = column_summary(df)
-    st.dataframe(cs)
+# -----------------------------
+# Step 4: Missing Values Summary
+# -----------------------------
+st.subheader("Missing Values Summary")
+missing_values = df.isnull().sum()
+st.bar_chart(missing_values)
 
-    st.subheader("Data Quality Score")
-    score = data_quality_score(df)
-    st.metric("DQ Score (0-100)", score)
+# Info for missing lab values
+missing_lab_rows = df['lab_value'].isnull().sum()
+if missing_lab_rows > 0:
+    st.info(f"Lab values missing for {missing_lab_rows} rows (may be tests not yet done)")
 
-    st.subheader("Type checks (optional)")
-    st.markdown("Enter column:type pairs (comma separated). types: int,float,date. Example: age:int,admission_date:date")
-    col_types_input = st.text_input("Column types", value="")
-    if st.button("Run checks"):
-        col_types = {}
-        if col_types_input.strip():
-            pairs = [p.strip() for p in col_types_input.split(",") if ":" in p]
-            for pair in pairs:
-                col,typ = pair.split(":")
-                col_types[col.strip()] = typ.strip()
-        issues = simple_type_checks(df, col_types)
-        st.write(issues)
+# -----------------------------
+# Step 5: Data Quality Score
+# -----------------------------
+dq_score = 100 - (df.isnull().sum().sum() / (df.shape[0]*df.shape[1]) * 100)
+st.subheader("Data Quality Score")
+st.progress(int(dq_score))
+st.write(f"Overall Data Quality Score: {dq_score:.2f}%")
 
-    st.subheader("Rule checks")
-    rules = apply_basic_rules(df)
-    if rules:
-        for r in rules:
-            st.warning(r)
-    else:
-        st.success("No rule failures detected")
+# -----------------------------
+# Step 6: Rule Checks (Updated)
+# -----------------------------
+st.subheader("Rule Checks")
+rule_violations = []
 
-    st.subheader("Duplicates and missing value visual")
-    missing = df.isna().sum().sort_values(ascending=False)
-    st.bar_chart(missing)
+# Age check: must exist and 0-120
+invalid_age_rows = df[(df['age'].isnull()) | (df['age'] < 0) | (df['age'] > 120)]
+if not invalid_age_rows.empty:
+    rule_violations.append(f"age: {len(invalid_age_rows)} rows with invalid or missing age (must be 0-120)")
 
-    st.subheader("Duplicates")
-    st.write(f"Duplicate rows: {int(df.duplicated().sum())}")
-    if int(df.duplicated().sum())>0:
-        st.write(df[df.duplicated(keep=False)].head(50))
+# Admission/Discharge check: only if discharge_date exists
+admission_discharge_rows = df[df['discharge_date'].notnull() & (df['admission_date'] > df['discharge_date'])]
+if not admission_discharge_rows.empty:
+    rule_violations.append(f"admission/discharge: {len(admission_discharge_rows)} rows where admission_date > discharge_date")
 
-    st.subheader("Export cleaned dataset")
-    st.markdown("Options: drop duplicates / fill missing with placeholders")
-    if st.button("Drop duplicates and download cleaned CSV"):
-        cleaned = df.drop_duplicates()
-        st.download_button("Download cleaned CSV", cleaned.to_csv(index=False).encode('utf-8'), "cleaned.csv", "text/csv")
-    if st.button("Fill missing with placeholders and download"):
-        filled = df.fillna("MISSING")
-        st.download_button("Download filled CSV", filled.to_csv(index=False).encode('utf-8'), "filled.csv", "text/csv")
+# Duplicate patient_id check
+duplicate_patient_rows = df[df.duplicated(subset=['patient_id'], keep=False)]
+if not duplicate_patient_rows.empty:
+    rule_violations.append(f"duplicate patient_id: {len(duplicate_patient_rows)} rows")
 
-    st.markdown("**Next steps:** use AI (Claude/Bolt) to suggest extra rules or create a model to auto-correct common formatting issues.")
+# Display rule violations
+if rule_violations:
+    for rule in rule_violations:
+        st.warning(rule)
 else:
-    st.info("Upload a CSV to get started, or check 'Load example demo dataset'.")
+    st.success("All rules passed!")
+
+# -----------------------------
+# Step 7: Data Cleaning Options
+# -----------------------------
+st.subheader("Data Cleaning Options")
+
+if st.button("Drop duplicates & Download"):
+    cleaned_df = df.drop_duplicates(subset=['patient_id'])
+    cleaned_df.to_csv("cleaned_data.csv", index=False)
+    st.success("Duplicates dropped. CSV saved as cleaned_data.csv")
+
+if st.button("Fill missing & Download"):
+    cleaned_df = df.fillna("Missing")
+    cleaned_df.to_csv("filled_data.csv", index=False)
+    st.success("Missing values filled. CSV saved as filled_data.csv")
+
+# -----------------------------
+# Step 8: Visualize Duplicates / Missing
+# -----------------------------
+st.subheader("Duplicates & Missing Values Visualization")
+dup_counts = df.duplicated(subset=['patient_id'], keep=False).sum()
+st.write(f"Total duplicate patient_id rows: {dup_counts}")
+
+st.bar_chart(df.isnull().sum())
