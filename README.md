@@ -36,7 +36,7 @@ You need **Python** installed on your system.
     ```
 
 2.  **Install Dependencies:**
-    [cite_start]The required Python packages are listed in `requirements.txt` [cite: 1] (`streamlit`, `pandas`, `numpy`, etc.).
+    The required Python packages are listed in `requirements.txt` (`streamlit`, `pandas`, `numpy`, etc.).
     ```bash
     pip install -r requirements.txt
     ```
@@ -52,6 +52,6 @@ You need **Python** installed on your system.
 
 | File | Description |
 | :--- | :--- |
-| `app.py` | [cite_start]The main Streamlit web application script, controlling the UI and workflow. [cite: 1] |
-| `dq_checks.py` | [cite_start]Contains helper functions for core data quality logic and rule application. [cite: 1] |
+| `app.py` | The main Streamlit web application script, controlling the UI and workflow. |
+| `dq_checks.py` | Contains helper functions for core data quality logic and rule application. |
 | `requirements.txt` | Lists all necessary Python packages. |
